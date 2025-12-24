@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trie Visualization — Adaptive Multilingual Autocomplete (Animated)</title>
+  <style>
+    :root{
+      --bg: #eaf6ff;
+      --card: #ffffff;
+      --accent: #9b4cff;
+      --muted:#6b7280;
+      --glass: rgba(255,255,255,0.6);
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#dff1ff 0%, #f7fbff 100%);display:flex;align-items:center;justify-content:center;padding:32px}
+    .wrap{width:1000px;max-width:98%;background:var(--card);border-radius:18px;box-shadow:0 20px 50px rgba(13,17,30,0.08);padding:28px;display:grid;grid-template-columns:1fr 360px;gap:20px}
+    .header{grid-column:1/3;display:flex;align-items:center;justify-content:space-between}
+    h1{margin:0;font-size:20px;color:#071033}
+    p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
+
+    /* input */
+    .controls{display:flex;gap:12px;align-items:center}
+    .searchBox{padding:12px 16px;border-radius:28px;border:2px solid rgba(155,76,204,0.15);min-width:360px;outline:none;font-size:16px}
+    .small{font-size:13px;color:var(--muted)}
+
+    /* SVG area */
+    .canvas{background:linear-gradient(180deg,#fbfdff,#fff);border-radius:12px;padding:18px;height:480px;overflow:auto}
+    svg{width:100%;height:100%}
+
+    /* right panel */
+    .panel{background:linear-gradient(180deg,#fff,#fbfbff);border-radius:12px;padding:16px}
+    .panel h3{margin:0 0 8px 0}
+    .suggestions{display:flex;flex-direction:column;gap:8px}
+    .suggestion{padding:10px;border-radius:10px;background:#f6f4ff;border:1px solid rgba(155,76,204,0.06);display:flex;justify-content:space-between;align-items:center;opacity:0;transform:translateX(30px)}
+    .suggestion.show{opacity:1;transform:translateX(0);transition:all 350ms cubic-bezier(.2,.9,.2,1)}
+    .chip{background:var(--accent);color:white;padding:6px 10px;border-radius:999px;font-weight:600}
+
+    .node{fill:#fff;stroke:#e6e6f0;stroke-width:1.6}
+    .nodeText{font-size:13px;fill:#111827;font-weight:700;pointer-events:none}
+    .nodeSmall{font-size:11px;fill:var(--muted);font-weight:600}
+    .edge{stroke:#cfc9f8;stroke-width:2;stroke-linecap:round}
+
+    /* animated states */
+    .edge.animate{stroke:#b88ef5}
+    .edge.draw { stroke-dasharray: 1000; stroke-dashoffset: 1000; transition: stroke-dashoffset 450ms ease-out, stroke 250ms ease; }
+    .edge.draw.active { stroke-dashoffset: 0; }
+
+    .node.circle-base{transition:transform 300ms cubic-bezier(.2,.9,.2,1), filter 300ms}
+    .node.circle-base.active{filter:drop-shadow(0 10px 30px rgba(155,76,204,0.25));transform:scale(1.06)}
+
+    .child.pop{transform-origin:center;transform:scale(0);opacity:0}
+    .child.pop.show{transform:scale(1);opacity:1;transition:transform 300ms cubic-bezier(.2,.9,.2,1),opacity 250ms}
+
+    .glow{filter:drop-shadow(0 8px 28px rgba(155,76,204,0.18))}
+
+    /* legend */
+    .legend{display:flex;gap:10px;align-items:center;margin-top:12px}
+    .legend .item{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}
+    .dot{width:12px;height:12px;border-radius:50%;background:var(--accent)}
+
+    /* responsive */
+    @media(max-width:980px){
+      .wrap{grid-template-columns:1fr}
+      .panel{order:3}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h1>Trie Visualization — Backend (Prefix + Children)</h1>
+        <p class="lead">Type a prefix and watch how the backend traverses the Trie and collects suggestions. (Animated)</p>
+      </div>
+      <div class="controls">
+        <input id="typed" class="searchBox" placeholder="Type prefix here (English/Devanagari/Punjabi etc.)" />
+        <div class="small">Live • Port: 9090</div>
+      </div>
+    </div>
+
+    <!-- SVG Canvas -->
+    <div class="canvas" id="canvas">
+      <svg id="svgRoot" viewBox="0 0 900 420" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="panel">
+      <h3>Suggestions</h3>
+      <div class="suggestions" id="suggestionsList">
+        <div class="small">No prefix yet — start typing to visualize.</div>
+      </div>
+
+      <div class="legend">
+        <div class="item"><div class="dot"></div> <div>Prefix path</div></div>
+        <div class="item"><div style="width:12px;height:12px;border-radius:50%;background:#fff;border:1px solid #ddd"></div> <div>Child nodes</div></div>
+      </div>
+
+      <div style="margin-top:12px;font-size:13px;color:var(--muted)">Status: <span id="status">idle</span></div>
+    </div>
+
+  </div>
+
+  <script>
+  // ---------------------------
+  // Animated Dashboard JS (Option A)
+  // ---------------------------
+  const API = 'http://127.0.0.1:9090'; // must match your server
+  const typed = document.getElementById('typed');
+  const svg = document.getElementById('svgRoot');
+  const suggestionsList = document.getElementById('suggestionsList');
+  const statusEl = document.getElementById('status');
+
+  // Helper: split unicode string into array of characters
+  function splitChars(str){ return Array.from(str); }
+  function clearSvg(){ while(svg.firstChild) svg.removeChild(svg.firstChild); }
+  function createSvgElement(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+
+  // Small util to sleep for ms
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Draw tree WITH animations sequence
+  async function animateDrawTree(prefix, childrenLetters){
+    clearSvg();
+    const w = 900, h = 420;
+    const startX = 80, startY = 60;
+    const xGap = 120;
+
+    // --- root ---
+    let rootX = startX, rootY = startY;
+    const rootG = createSvgElement('g');
+    const rootCircle = createSvgElement('circle');
+    rootCircle.setAttribute('cx', rootX); rootCircle.setAttribute('cy', rootY);
+    rootCircle.setAttribute('r', 20); rootCircle.setAttribute('class','node circle-base');
+    rootG.appendChild(rootCircle);
+    const rootText = createSvgElement('text');
+    rootText.setAttribute('x', rootX); rootText.setAttribute('y', rootY+5);
+    rootText.setAttribute('text-anchor','middle'); rootText.setAttribute('class','nodeText');
+    rootText.textContent = 'root'; rootG.appendChild(rootText);
+    svg.appendChild(rootG);
+
+    // small pause then highlight root
+    await sleep(120);
+    rootCircle.classList.add('active');
+
+    // draw prefix nodes sequentially with animated edges
+    const chars = splitChars(prefix);
+    let prevX = rootX, prevY = rootY;
+    for(let idx=0; idx<chars.length; idx++){
+      const ch = chars[idx];
+      const x = rootX + xGap*(idx+1);
+      const y = rootY;
+      // edge (invisible path)
+      const edge = createSvgElement('line');
+      edge.setAttribute('x1', prevX+20); edge.setAttribute('y1', prevY);
+      edge.setAttribute('x2', x-20); edge.setAttribute('y2', y);
+      edge.setAttribute('class','edge draw'); svg.appendChild(edge);
+
+      // node (not active yet)
+      const g = createSvgElement('g');
+      const c = createSvgElement('circle');
+      c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 22);
+      c.setAttribute('class','node circle-base');
+      g.appendChild(c);
+      const t = createSvgElement('text'); t.setAttribute('x', x); t.setAttribute('y', y+6);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('class','nodeText'); t.textContent = ch;
+      g.appendChild(t);
+      svg.appendChild(g);
+
+      // animate edge draw then activate node
+      await sleep(80);
+      edge.classList.add('active');
+      await sleep(140);
+      c.classList.add('active');
+      prevX = x; prevY = y;
+    }
+
+    // draw children with pop animation
+    const children = childrenLetters || [];
+    const baseX = prevX; const baseY = prevY;
+    const childY = baseY + 120;
+    const childGap = Math.min(70, 360 / Math.max(1, children.length));
+    const startChildrenX = baseX - ((children.length-1)*childGap)/2;
+
+    for(let i=0;i<children.length;i++){
+      const ch = children[i];
+      const cx = startChildrenX + i*childGap;
+      // connecting edge
+      const edge = createSvgElement('line');
+      edge.setAttribute('x1', baseX); edge.setAttribute('y1', baseY+22);
+      edge.setAttribute('x2', cx); edge.setAttribute('y2', childY-22);
+      edge.setAttribute('class','edge'); svg.appendChild(edge);
+
+      // child node group
+      const g = createSvgElement('g');
+      const c = createSvgElement('circle'); c.setAttribute('cx', cx); c.setAttribute('cy', childY); c.setAttribute('r',18);
+      c.setAttribute('class','node child pop'); g.appendChild(c);
+      const t = createSvgElement('text'); t.setAttribute('x', cx); t.setAttribute('y', childY+6);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('class','nodeText'); t.textContent = ch;
+      g.appendChild(t);
+      svg.appendChild(g);
+
+      // staggered pop
+      await sleep(50);
+      c.classList.add('show');
+    }
+
+    // ensure viewbox
+    svg.setAttribute('viewBox', '0 0 900 420');
+  }
+
+  // Render suggestions with slide-in animation
+  function renderSuggestions(list){
+    suggestionsList.innerHTML = '';
+    if(!list || list.length===0){
+      suggestionsList.innerHTML = '<div class="small">No suggestions from backend.</div>';
+      return;
+    }
+    list.forEach((w, idx) => {
+      const div = document.createElement('div'); div.className='suggestion';
+      const left = document.createElement('div'); left.textContent = w;
+      const right = document.createElement('div'); right.className='chip'; right.textContent = 'SELECT';
+      right.onclick = () => { typed.value = w + ' '; };
+      div.appendChild(left); div.appendChild(right);
+      suggestionsList.appendChild(div);
+      // staggered show
+      setTimeout(()=> div.classList.add('show'), 80 + idx*70);
+    });
+  }
+
+  // Compute next-character children from candidate words
+  function computeChildren(prefix, candidates){
+    const children = [];
+    const seen = new Set();
+    const plen = Array.from(prefix).length;
+    candidates.forEach(w => {
+      const chars = Array.from(w);
+      if(chars.length > plen){
+        const next = chars[plen];
+        if(!seen.has(next)){
+          seen.add(next); children.push(next);
+        }
+      }
+    });
+    return children;
+  }
+
+  // Main input handler with debounce and animated draw
+  let timer = null;
+  typed.addEventListener('input', ()=>{
+    clearTimeout(timer);
+    timer = setTimeout(async ()=>{
+      const full = typed.value;
+      const words = full.trim().split(/\s+/);
+      const prefix = words[words.length-1] || '';
+      if(!prefix){ statusEl.textContent='idle'; renderSuggestions([]); animateDrawTree('',[]); return; }
+      statusEl.textContent='fetching...';
+      try{
+        const resp = await fetch(`${API}/suggest?prefix=${encodeURIComponent(prefix)}`);
+        if(!resp.ok) throw new Error('Network');
+        const data = await resp.json();
+        renderSuggestions(data.slice(0,8));
+        const children = computeChildren(prefix, data);
+        await animateDrawTree(prefix, children.slice(0,10));
+        statusEl.textContent=`found ${data.length} candidate(s)`;
+        // subtle status highlight
+        statusEl.style.transition = 'box-shadow 300ms';
+        statusEl.classList && (statusEl.classList.add('pulse'));
+      }catch(e){
+        statusEl.textContent='server offline / error';
+        suggestionsList.innerHTML='<div class="small">Server Offline — start your C++ server on port 9090.</div>';
+        await animateDrawTree(prefix, []);
+      }
+    }, 120);
+  });
+
+  // initial draw
+  animateDrawTree('', []);
+  </script>
+</body>
+</html>
+
+
+<!--  
+       
+      cd "%USERPROFILE%\OneDrive\Desktop\autocompleteproject(DS)\frontend"
+
+       python -m http.server 8000
+
+-->

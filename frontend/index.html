@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <!-- Responsive on all devices -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Adaptive Multilingual Autocomplete</title>
+
+  <!-- External CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- Full Page Wrapper -->
+  <div class="wrapper">
+    <div class="card">
+
+      <!-- Theme Toggle -->
+      <button id="themeToggle" class="theme-btn">🌙</button>
+
+      <!-- Title -->
+      <h1>Adaptive Multilingual Autocomplete</h1>
+
+      <!-- Input + Suggestions Section -->
+      <div class="input-section">
+
+        <!-- Text Input -->
+        <div class="input-wrapper">
+          <input 
+            id="typed" 
+            type="text" 
+            placeholder="Type here..." 
+            autocomplete="off"
+          >
+        </div>
+
+        <!-- 🔥 New Loading Spinner -->
+        <div id="spinner" class="spinner hidden" aria-hidden="true">
+          <div class="spinner-ring">
+            <div></div><div></div><div></div><div></div>
+          </div>
+          <span class="spinner-text">Searching…</span>
+        </div>
+
+        <!-- Suggestions -->
+        <div id="chips" class="suggestions"></div>
+
+      </div>
+
+      <!-- Hint text -->
+      <p class="hint">
+        💡 Supports English • Hindi • Marathi • Punjabi • Bengali • Kannada & more!
+      </p>
+
+    </div>
+  </div>
+
+  <!-- Popup (learning notification) -->
+  <div id="popup" class="popup"></div>
+
+  <!-- JavaScript -->
+  <script src="script.js"></script>
+
+</body>
+</html>
+
+
+
+
+<!-- 
+   cd "%USERPROFILE%\OneDrive\Desktop\autocompleteproject(DS)\backend"
+g++ -std=c++17 server.cpp -o server.exe -lws2_32
+server.exe
+-->
